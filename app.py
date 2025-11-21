@@ -1,6 +1,5 @@
 # ia_resumen_bancario_santafe.py
-# Herramienta para uso interno - AIE San Justo
-# Versión exclusiva Banco de Santa Fe
+# Herramienta para uso interno - AIE San Justo (Banco de Santa Fe)
 
 import io, re
 from pathlib import Path
@@ -12,11 +11,14 @@ import streamlit as st
 HERE = Path(__file__).parent
 LOGO = HERE / "logo_aie.png"
 FAVICON = HERE / "favicon-aie.ico"
-st.set_page_config(page_title="IA Resumen Bancario - Banco de Santa Fe",
-                   page_icon=str(FAVICON) if FAVICON.exists() else None)
+
+st.set_page_config(
+    page_title="IA Resumen Bancario - Banco de Santa Fe",
+    page_icon=str(FAVICON) if FAVICON.exists() else None
+)
 if LOGO.exists():
     st.image(str(LOGO), width=200)
-st.title("IA Resumen Bancario · Banco de Santa Fe")
+st.title("IA Resumen Bancario – Banco de Santa Fe")
 
 # --- deps diferidas ---
 try:
@@ -37,7 +39,9 @@ except Exception:
 
 # --- regex ---
 DATE_RE  = re.compile(r"\b\d{1,2}/\d{2}/\d{4}\b")
-MONEY_RE = re.compile(r'(?<!\S)(?:\d{1,3}(?:\.\d{3})*|\d+)\s?,\s?\d{2}-?(?!\S)')
+MONEY_RE = re.compile(
+    r'(?<!\S)(?:\d{1,3}(?:\.\d{3})*|\d+)\s?,\s?\d{2}-?(?!\S)'
+)
 LONG_INT_RE = re.compile(r"\b\d{6,}\b")
 
 # --- utils ---
@@ -150,7 +154,7 @@ def find_saldo_final(file_like):
 # --- saldo anterior (misma línea) ---
 def find_saldo_anterior(file_like):
     with pdfplumber.open(file_like) as pdf:
-        # 1) Intento con reconstrucción de línea por coordenadas
+        # primero usando agrupado XY
         for page in pdf.pages:
             words = page.extract_words(extra_attrs=["top", "x0"])
             if words:
@@ -166,7 +170,7 @@ def find_saldo_anterior(file_like):
                         am = list(MONEY_RE.finditer(line_text))
                         if am:
                             return normalize_money(am[-1].group(0))
-        # 2) Fallback: texto plano
+        # fallback usando solo texto plano
         for page in pdf.pages:
             txt = page.extract_text() or ""
             for raw in txt.splitlines():
@@ -178,7 +182,7 @@ def find_saldo_anterior(file_like):
     return np.nan
 
 # --- UI principal ---
-uploaded = st.file_uploader("Subí un PDF del resumen bancario (Banco de Santa Fe)", type=["pdf"])
+uploaded = st.file_uploader("Subí un PDF del Banco de Santa Fe", type=["pdf"])
 if uploaded is None:
     st.info("La app no almacena datos, toda la información está protegida.")
     st.stop()
@@ -241,11 +245,11 @@ def clasificar(desc: str, desc_norm: str, deb: float, cre: float) -> str:
     if ("IVA PERC" in u) or ("IVA PERCEP" in u) or ("RG3337" in u) or ("IVA PERC" in n) or ("IVA PERCEP" in n) or ("RG3337" in n):
         return "Percepciones de IVA"
 
-    # IVA 21% (sobre comisiones) Santa Fe
+    # IVA 21% (sobre comisiones)
     if ("IVA GRAL" in u or "IVA GRAL" in n):
         return "IVA 21% (sobre comisiones)"
 
-    # IVA 10,5% (sobre comisiones) Santa Fe
+    # IVA 10,5% (sobre comisiones)
     if ("IVA RINS" in u or "IVA REDUC" in u or "IVA RINS" in n or "IVA REDUC" in n):
         return "IVA 10,5% (sobre comisiones)"
 
@@ -261,6 +265,7 @@ def clasificar(desc: str, desc_norm: str, deb: float, cre: float) -> str:
     if "DYC" in n:
         return "DyC"
     
+    # Si es un débito y dice AFIP o ARCA → "Débitos ARCA"
     if ("AFIP" in n or "ARCA" in n) and deb and deb != 0:
         return "Débitos ARCA"
     
@@ -323,7 +328,8 @@ saldo_final_calculado = saldo_inicial + total_creditos - total_debitos
 diferencia = saldo_final_calculado - saldo_final_visto
 cuadra = abs(diferencia) < 0.01
 
-# Encabezado
+# ================== ORDEN DE PANTALLA ==================
+# 1) Resumen del período
 st.subheader("Resumen del período")
 c1, c2, c3 = st.columns(3)
 with c1: st.metric("Saldo inicial", f"$ {fmt_ar(saldo_inicial)}")
@@ -341,12 +347,7 @@ else:
 if pd.notna(fecha_cierre):
     st.caption(f"Cierre según PDF: {fecha_cierre.strftime('%d/%m/%Y')}")
 
-st.divider()
-st.subheader("Detalle de movimientos")
-styled = df_sorted.style.format({c: fmt_ar for c in ["debito","credito","importe","saldo"]}, na_rep="—")
-st.dataframe(styled, use_container_width=True)
-
-# ====== Resumen Operativo: Registración Módulo IVA ======
+# 2) Resumen Operativo (ARRIBA de la grilla)
 st.divider()
 st.subheader("Resumen Operativo: Registración Módulo IVA")
 
@@ -379,7 +380,16 @@ with o3: st.metric("SIRCREB", f"$ {fmt_ar(sircreb)}")
 total_operativo = net21 + iva21 + net105 + iva105 + percep_iva + ley_25413 + sircreb
 st.metric("Total Resumen Operativo", f"$ {fmt_ar(total_operativo)}")
 
-# --- Descargar grilla en Excel (con fallback a CSV) ---
+# 3) Grilla / detalle de movimientos (ABAJO del Resumen Operativo)
+st.divider()
+st.subheader("Detalle de movimientos")
+styled = df_sorted.style.format(
+    {c: fmt_ar for c in ["debito","credito","importe","saldo"]},
+    na_rep="—"
+)
+st.dataframe(styled, use_container_width=True)
+
+# 4) Descargar grilla en Excel (con fallback a CSV)
 st.divider()
 st.subheader("Descargar")
 
@@ -421,7 +431,7 @@ except Exception:
         use_container_width=True,
     )
 
-# --- PDF del Resumen Operativo (si reportlab disponible) ---
+# 5) PDF del Resumen Operativo (si reportlab disponible)
 if REPORTLAB_OK:
     try:
         pdf_buf = io.BytesIO()
