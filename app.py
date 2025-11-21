@@ -41,9 +41,12 @@ def normalize_money(tok: str) -> float:
         return -val if neg else val
     except: return np.nan
 
-def fmt_ar(n): return "—" if (n is None or (isinstance(n,float) and np.isnan(n))) else f"{n:,.2f}".replace(",", "§").replace(".", ",").replace("§",".")
+def fmt_ar(n): 
+    return "—" if (n is None or (isinstance(n,float) and np.isnan(n))) else f"{n:,.2f}".replace(",", "§").replace(".", ",").replace("§",".")
 
-def lines_from_text(page): return [" ".join(l.split()) for l in (page.extract_text() or "").splitlines()]
+def lines_from_text(page): 
+    return [" ".join(l.split()) for l in (page.extract_text() or "").splitlines()]
+
 def lines_from_words(page, ytol=2.0):
     words = page.extract_words(extra_attrs=["x0","top"])
     if not words: return []
@@ -57,7 +60,9 @@ def lines_from_words(page, ytol=2.0):
     if cur: lines.append(" ".join(x["text"] for x in cur))
     return [" ".join(l.split()) for l in lines]
 
-def normalize_desc(desc): return " ".join(LONG_INT_RE.sub("", (desc or "").upper()).split())
+def normalize_desc(desc): 
+    return " ".join(LONG_INT_RE.sub("", (desc or "").upper()).split())
+
 def extract_all_lines(file_like):
     out=[]
     with pdfplumber.open(file_like) as pdf:
@@ -67,7 +72,6 @@ def extract_all_lines(file_like):
             for l in combined:
                 if l.strip(): out.append((pi," ".join(l.split())))
     return out
-
 def find_saldo_anterior(lines):
     for _,ln in lines:
         u=ln.upper()
@@ -84,9 +88,17 @@ def find_saldo_final_pdf(lines):
             if am: return normalize_money(am[-1].group(0))
     return np.nan
 
-def detectar_signo_santafe(desc_norm):
-    u=(desc_norm or "").upper()
-    if any(k in u for k in ("DTNPROVE","DEP EFEC","DEPOSITO EFECTIVO","TRANLINK","INT CCSA")): return "credito"
+def detectar_signo_santafe(desc_norm: str) -> str:
+    u = (desc_norm or "").upper()
+
+    # Créditos claros
+    if any(k in u for k in ("DTNPROVE","DEP EFEC","DEPOSITO EFECTIVO","TRANLINK","INT CCSA")):
+        return "credito"
+
+    # Depósito de cheque propio → crédito
+    if "DEP CH PROPIO" in u or "D CH PRO" in u:
+        return "credito"
+
     return "debito"
 
 def clasificar(desc,desc_norm,deb,cre):
@@ -200,6 +212,9 @@ else:
     df["debito"]=debitos
     df["credito"]=creditos
     df["signo"]=signos
+
+# Excluir saldo final como movimiento
+df = df[~df["descripcion"].str.upper().str.contains("SALDO AL|SALDO FINAL")]
 
 # Clasificación
 df["Clasificación"]=df.apply(
@@ -327,3 +342,33 @@ except Exception:
                        file_name="resumen_bancario_santafe.csv",
                        mime="text/csv",
                        use_container_width=True)
+
+# ===========================
+#   PDF DEL RESUMEN OPERATIVO
+# ===========================
+st.subheader("Descargar PDF del Resumen Operativo")
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    pdf_buffer = io.BytesIO()
+    c = canvas.Canvas(pdf_buffer, pagesize=A4)
+    c.setFont("Helvetica", 12)
+    c.drawString(50, 800, "Resumen Operativo - Banco de Santa Fe")
+    c.drawString(50, 780, f"Saldo inicial: $ {fmt_ar(saldo_inicial)}")
+    c.drawString(50, 760, f"Créditos: $ {fmt_ar(total_creditos)}")
+    c.drawString(50, 740, f"Débitos: $ {fmt_ar(total_debitos)}")
+    c.drawString(50, 720, f"Saldo final calculado: $ {fmt_ar(saldo_final_calculado)}")
+    c.drawString(50, 700, f"Saldo final PDF: $ {fmt_ar(saldo_final_visto)}")
+    c.drawString(50, 680, f"Diferencia: $ {fmt_ar(diferencia)}")
+    c.drawString(50, 660, f"Total Gastos Bancarios: $ {fmt_ar(total_gastos)}")
+    c.showPage()
+    c.save()
+    pdf_bytes = pdf_buffer.getvalue()
+    st.download_button("📥 Descargar PDF",
+                       data=pdf_bytes,
+                       file_name="resumen_operativo.pdf",
+                       mime="application/pdf",
+                       use_container_width=True)
+except Exception as e:
+    st.error(f"No se pudo generar el PDF: {e}")
