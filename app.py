@@ -1,5 +1,6 @@
-# ia_resumen_bancario.py
+# ia_resumen_bancario_santafe.py
 # Herramienta para uso interno - AIE San Justo
+# Versión exclusiva Banco de Santa Fe
 
 import io, re
 from pathlib import Path
@@ -11,10 +12,11 @@ import streamlit as st
 HERE = Path(__file__).parent
 LOGO = HERE / "logo_aie.png"
 FAVICON = HERE / "favicon-aie.ico"
-st.set_page_config(page_title="IA Resumen Bancario", page_icon=str(FAVICON) if FAVICON.exists() else None)
+st.set_page_config(page_title="IA Resumen Bancario - Banco de Santa Fe",
+                   page_icon=str(FAVICON) if FAVICON.exists() else None)
 if LOGO.exists():
     st.image(str(LOGO), width=200)
-st.title("IA Resumen Bancario")
+st.title("IA Resumen Bancario · Banco de Santa Fe")
 
 # --- deps diferidas ---
 try:
@@ -148,6 +150,7 @@ def find_saldo_final(file_like):
 # --- saldo anterior (misma línea) ---
 def find_saldo_anterior(file_like):
     with pdfplumber.open(file_like) as pdf:
+        # 1) Intento con reconstrucción de línea por coordenadas
         for page in pdf.pages:
             words = page.extract_words(extra_attrs=["top", "x0"])
             if words:
@@ -163,6 +166,7 @@ def find_saldo_anterior(file_like):
                         am = list(MONEY_RE.finditer(line_text))
                         if am:
                             return normalize_money(am[-1].group(0))
+        # 2) Fallback: texto plano
         for page in pdf.pages:
             txt = page.extract_text() or ""
             for raw in txt.splitlines():
@@ -174,7 +178,7 @@ def find_saldo_anterior(file_like):
     return np.nan
 
 # --- UI principal ---
-uploaded = st.file_uploader("Subí un PDF del resumen bancario", type=["pdf"])
+uploaded = st.file_uploader("Subí un PDF del resumen bancario (Banco de Santa Fe)", type=["pdf"])
 if uploaded is None:
     st.info("La app no almacena datos, toda la información está protegida.")
     st.stop()
@@ -237,11 +241,11 @@ def clasificar(desc: str, desc_norm: str, deb: float, cre: float) -> str:
     if ("IVA PERC" in u) or ("IVA PERCEP" in u) or ("RG3337" in u) or ("IVA PERC" in n) or ("IVA PERCEP" in n) or ("RG3337" in n):
         return "Percepciones de IVA"
 
-    # IVA 21% (sobre comisiones)
+    # IVA 21% (sobre comisiones) Santa Fe
     if ("IVA GRAL" in u or "IVA GRAL" in n):
         return "IVA 21% (sobre comisiones)"
 
-    # IVA 10,5% (sobre comisiones)
+    # IVA 10,5% (sobre comisiones) Santa Fe
     if ("IVA RINS" in u or "IVA REDUC" in u or "IVA RINS" in n or "IVA REDUC" in n):
         return "IVA 10,5% (sobre comisiones)"
 
@@ -257,7 +261,6 @@ def clasificar(desc: str, desc_norm: str, deb: float, cre: float) -> str:
     if "DYC" in n:
         return "DyC"
     
-    # Si es un débito y dice AFIP o ARCA → "Débitos ARCA"
     if ("AFIP" in n or "ARCA" in n) and deb and deb != 0:
         return "Débitos ARCA"
     
@@ -305,7 +308,6 @@ df["Clasificación"] = df.apply(
     lambda r: clasificar(str(r.get("descripcion","")), str(r.get("desc_norm","")), r.get("debito",0.0), r.get("credito",0.0)),
     axis=1
 )
-# -------------------------------------------
 
 # --- cabecera / totales / conciliación ---
 fecha_cierre, saldo_final_pdf = find_saldo_final(io.BytesIO(data))
@@ -405,7 +407,7 @@ try:
     st.download_button(
         "📥 Descargar Excel",
         data=output.getvalue(),
-        file_name="resumen_bancario.xlsx",
+        file_name="resumen_bancario_santafe.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
@@ -414,7 +416,7 @@ except Exception:
     st.download_button(
         "📥 Descargar CSV (fallback)",
         data=csv_bytes,
-        file_name="resumen_bancario.csv",
+        file_name="resumen_bancario_santafe.csv",
         mime="text/csv",
         use_container_width=True,
     )
@@ -457,7 +459,7 @@ if REPORTLAB_OK:
         st.download_button(
             "📄 Descargar PDF – Resumen Operativo (IVA)",
             data=pdf_buf.getvalue(),
-            file_name="Resumen_Operativo_IVA.pdf",
+            file_name="Resumen_Operativo_IVA_SantaFe.pdf",
             mime="application/pdf",
             use_container_width=True,
         )
@@ -465,10 +467,3 @@ if REPORTLAB_OK:
         st.info(f"No se pudo generar el PDF del Resumen Operativo: {e}")
 else:
     st.caption("Para descargar el PDF del Resumen Operativo instalá reportlab en requirements.txt")
-
-
-
-
-
-
-
