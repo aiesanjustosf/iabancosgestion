@@ -9,8 +9,11 @@ import streamlit as st
 
 # --- UI / assets ---
 HERE = Path(__file__).parent
-LOGO = HERE / "logo_aie.png"
-FAVICON = HERE / "favicon-aie.ico"
+ASSETS = HERE / "assets"
+
+LOGO = ASSETS / "logo_aie.png"
+FAVICON = ASSETS / "favicon-aie.ico"  # si todavía no existe, no pasa nada
+
 
 st.set_page_config(
     page_title="IA Resumen Bancario - Banco de Santa Fe",
